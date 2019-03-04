@@ -4,6 +4,7 @@
 #include <math.h>
 #include <string>
 #include <vector>
+#include "spline.h"
 
 // for convenience
 using std::string;
@@ -152,6 +153,62 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s,
   double y = seg_y + d*sin(perp_heading);
 
   return {x,y};
+}
+
+// get check car speed
+double getFutureCheckCar_s(vector<double> sensor_fusion, int prev_size)
+{
+  double vx = sensor_fusion[3];
+  double vy = sensor_fusion[4];
+  double check_speed = sqrt(vx*vx+vy*vy);
+  double check_car_s = sensor_fusion[5];
+  return check_car_s + ((double)prev_size*0.02*check_speed); // if using previous points - project s value in future
+}
+
+// get car lane [0,1,2]
+int getCarLane(float d)
+{
+  if (d >= 0 && d < 4) {
+    return 0;
+  } else if (d >= 4 && d < 8) {
+    return 1;
+  } else if (d >= 8 && d <= 12) {
+    return 2;
+  } else {
+    return -1;
+  }
+}
+
+void updateRefVel_Lane(int &lane, double &ref_vel, bool too_close, bool car_left, bool car_right, double max_speed)
+{
+  // Modulate the speed to avoid collisions. Change lanes if it is safe to do so (nobody to the side)
+  double acc = 0.224;
+  // car in front
+  if (too_close) {
+    // shift lanes or slow down
+    if (!car_right && lane < 2) {
+      // no car on right & there is a right lane -> shift right
+      lane++;
+    } else if (!car_left && lane > 0) {
+      // no car on the left & there is a left lane -> shift left
+      lane--;
+    } else {
+      // no lane available to shift -> slow down
+      ref_vel -= acc;
+    }
+    // no car in front
+  } else {
+    if (lane != 1) {
+      // not in the center lane - try to move back to center lane
+      if ((lane == 2 && !car_left) || (lane == 0 && !car_right)) {
+        lane = 1;
+      }
+    }
+    // accelerate if below max speed
+    if (ref_vel < max_speed) {
+      ref_vel += acc;
+    }
+  }
 }
 
 #endif  // HELPERS_H
